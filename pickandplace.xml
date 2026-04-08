@@ -1,0 +1,204 @@
+<mujoco model="pickandplace">
+  <compiler angle="radian" meshdir="meshes" autolimits="true"/>
+  <option timestep="0.002" gravity="0 0 -9.81"/>
+  <visual>
+    <headlight ambient="0.4 0.4 0.4" diffuse="0.8 0.8 0.8" specular="0.1 0.1 0.1"/>
+    <rgba haze="0.15 0.25 0.35 1"/>
+    <global azimuth="150" elevation="-20"/>
+  </visual>
+
+  <asset>
+    <!-- 바닥 텍스처 -->
+    <texture name="tex_floor" type="2d" builtin="checker"
+             rgb1="0.6 0.6 0.6" rgb2="0.5 0.5 0.5"
+             width="512" height="512"/>
+    <material name="mat_floor" texture="tex_floor"
+              texrepeat="4 4" reflectance="0.2"/>
+
+    <!-- 테이블 상판 재질 -->
+    <texture name="tex_table" type="2d" builtin="flat"
+             rgb1="0.75 0.60 0.42" rgb2="0.75 0.60 0.42"
+             width="128" height="128"/>
+    <material name="mat_table_top" texture="tex_table"
+              specular="0.3" shininess="0.3" reflectance="0.1"/>
+
+    <!-- 테이블 다리 재질 -->
+    <material name="mat_table_leg" rgba="0.55 0.45 0.32 1"
+              specular="0.2" shininess="0.2"/>
+
+    <!-- 빨간 물체 재질 -->
+    <material name="mat_object" rgba="0.85 0.12 0.12 1"
+              specular="0.5" shininess="0.5" reflectance="0.05"/>
+
+    <!-- Pick 테이블 라벨용 재질 -->
+    <material name="mat_pick_label" rgba="0.2 0.6 0.2 1"/>
+
+    <!-- Place 테이블 라벨용 재질 -->
+    <material name="mat_place_label" rgba="0.2 0.2 0.8 1"/>
+  </asset>
+
+  <!-- ============================================================
+       기본값 (Default)
+  ============================================================ -->
+  <default>
+    <geom condim="3" friction="0.8 0.02 0.01"/>
+
+    <default class="table_top">
+      <geom type="box" material="mat_table_top"
+            mass="20" contype="1" conaffinity="1"/>
+    </default>
+
+    <default class="table_leg">
+      <geom type="cylinder" material="mat_table_leg"
+            mass="2" contype="1" conaffinity="1"/>
+    </default>
+
+    <default class="object">
+      <geom type="box" material="mat_object"
+            condim="4" friction="1.0 0.05 0.01"
+            contype="1" conaffinity="1"/>
+      <joint type="free" damping="0.01"/>
+    </default>
+  </default>
+
+  <!-- ============================================================
+       월드 바디 (World Body)
+  ============================================================ -->
+  <worldbody>
+
+    <!-- 조명 -->
+    <light name="main_light" pos="0 0 3.0" dir="0 0 -1"
+           diffuse="0.9 0.9 0.9" specular="0.3 0.3 0.3"
+           directional="true" castshadow="true"/>
+    <light name="fill_light" pos="1.5 -1.5 2.5" dir="-0.4 0.4 -0.8"
+           diffuse="0.4 0.4 0.4" specular="0.1 0.1 0.1"
+           directional="false" castshadow="false"/>
+
+    <!-- 바닥 -->
+    <geom name="floor" type="plane"
+          size="5 5 0.1" material="mat_floor"
+          contype="1" conaffinity="1" friction="0.8 0.02 0.01"/>
+    <site name="robot_base_site" pos="0 0 0" size="0.01"/>
+
+    <!-- ===========================================================
+         PICK 테이블  (로봇 왼쪽, Y+ 방향)
+         중심 위치: x=0.0, y=0.55, z=0  →  상판 중심 z=0.385 m (상면 ~0.405 m)
+    =========================================================== -->
+    <body name="table_pick" pos="0.0 0.55 0.0">
+
+      <!-- 상판: 0.70 × 0.50 × 0.04 m -->
+      <geom name="pick_top" class="table_top"
+            size="0.35 0.25 0.02"
+            pos="0 0 0.385"/>
+
+      <!-- 다리 4개: 반지름 0.025, 반높이 0.1825 (전장 ~0.365 m) -->
+      <geom name="pick_leg_fl" class="table_leg"
+            size="0.025 0.1825" pos=" 0.30  0.21 0.1825"/>
+      <geom name="pick_leg_fr" class="table_leg"
+            size="0.025 0.1825" pos=" 0.30 -0.21 0.1825"/>
+      <geom name="pick_leg_bl" class="table_leg"
+            size="0.025 0.1825" pos="-0.30  0.21 0.1825"/>
+      <geom name="pick_leg_br" class="table_leg"
+            size="0.025 0.1825" pos="-0.30 -0.21 0.1825"/>
+
+      <!-- Pick 테이블 엣지 마커 (초록색) -->
+      <geom name="pick_marker_1" type="box"
+            size="0.35 0.005 0.003"
+            pos="0 0.245 0.408"
+            material="mat_pick_label"
+            contype="0" conaffinity="0" mass="0"/>
+      <geom name="pick_marker_2" type="box"
+            size="0.35 0.005 0.003"
+            pos="0 -0.245 0.408"
+            material="mat_pick_label"
+            contype="0" conaffinity="0" mass="0"/>
+      <geom name="pick_marker_3" type="box"
+            size="0.25 0.005 0.003"
+            pos="0.345 0 0.408"
+            euler="0 0 1.5708"
+            material="mat_pick_label"
+            contype="0" conaffinity="0" mass="0"/>
+      <geom name="pick_marker_4" type="box"
+            size="0.25 0.005 0.003"
+            pos="-0.345 0 0.408"
+            euler="0 0 1.5708"
+            material="mat_pick_label"
+            contype="0" conaffinity="0" mass="0"/>
+
+    </body>
+
+    <!-- ===========================================================
+         PLACE 테이블  (로봇 오른쪽, Y- 방향)
+         중심 위치: x=0.0, y=-0.55, z=0  →  상판 중심 z=0.385 m (상면 ~0.405 m)
+    =========================================================== -->
+    <body name="table_place" pos="0.0 -0.55 0.0">
+
+      <!-- 상판: 0.70 × 0.50 × 0.04 m -->
+      <geom name="place_top" class="table_top"
+            size="0.35 0.25 0.02"
+            pos="0 0 0.385"/>
+
+      <!-- 다리 4개 -->
+      <geom name="place_leg_fl" class="table_leg"
+            size="0.025 0.1825" pos=" 0.30  0.21 0.1825"/>
+      <geom name="place_leg_fr" class="table_leg"
+            size="0.025 0.1825" pos=" 0.30 -0.21 0.1825"/>
+      <geom name="place_leg_bl" class="table_leg"
+            size="0.025 0.1825" pos="-0.30  0.21 0.1825"/>
+      <geom name="place_leg_br" class="table_leg"
+            size="0.025 0.1825" pos="-0.30 -0.21 0.1825"/>
+
+      <!-- Place 테이블 엣지 마커 (파란색) -->
+      <geom name="place_marker_1" type="box"
+            size="0.35 0.005 0.003"
+            pos="0 0.245 0.408"
+            material="mat_place_label"
+            contype="0" conaffinity="0" mass="0"/>
+      <geom name="place_marker_2" type="box"
+            size="0.35 0.005 0.003"
+            pos="0 -0.245 0.408"
+            material="mat_place_label"
+            contype="0" conaffinity="0" mass="0"/>
+      <geom name="place_marker_3" type="box"
+            size="0.25 0.005 0.003"
+            pos="0.345 0 0.408"
+            euler="0 0 1.5708"
+            material="mat_place_label"
+            contype="0" conaffinity="0" mass="0"/>
+      <geom name="place_marker_4" type="box"
+            size="0.25 0.005 0.003"
+            pos="-0.345 0 0.408"
+            euler="0 0 1.5708"
+            material="mat_place_label"
+            contype="0" conaffinity="0" mass="0"/>
+
+    </body>
+
+    <!-- ===========================================================
+         Pick 대상 물체 — 빨간 직육면체
+         Pick 테이블 상판(z≈0.405) 위에 배치
+         크기: 0.06 × 0.06 × 0.08 m  (half-size: 0.03 0.03 0.04)
+         질량: 0.3 kg
+    =========================================================== -->
+    <body name="red_box" pos="0.0 0.55 0.445">
+      <joint name="red_box_joint" class="object"/>
+      <geom name="red_box_geom" class="object"
+            size="0.030 0.030 0.040"
+            mass="0.3"
+            rgba="0.85 0.12 0.12 1"/>
+
+      <!-- 물체 중심 사이트 (그래스핑 참조점) -->
+      <site name="red_box_center" type="sphere" size="0.005"
+            rgba="1 1 0 0.8" pos="0 0 0"/>
+    </body>
+
+  </worldbody>
+
+  <!-- ============================================================
+       접촉 제외 설정 (필요 시 로봇과 통합할 때 활용)
+  ============================================================ -->
+  <contact>
+    <!-- 테이블끼리는 충돌하지 않도록 -->
+    <exclude body1="table_pick" body2="table_place"/>
+  </contact>
+</mujoco>

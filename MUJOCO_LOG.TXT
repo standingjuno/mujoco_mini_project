@@ -1,0 +1,6 @@
+Thu Apr  2 15:12:36 2026
+WARNING: Read error while reading '/Users/standingjuno/MuJoCo/mujoco_menagerie/universal_robots_ur5e'
+
+Wed Apr  8 14:22:12 2026
+ERROR: mj_setKeyframe: keyframe index cannot be negative
+
