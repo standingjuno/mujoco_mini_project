@@ -51,12 +51,11 @@ for i, name in enumerate(actuator_names):
 
 mujoco.mj_forward(model, data)
 
-# ── IK
-configuration = mink.Configuration(model)
-configuration.update(data.qpos)
+# --
+configuration = mink.Configuration(model) # mink가 IK를 풀기 위해 model의 Joint, Position 등을 관리하는 객체 생성
+configuration.update(data.qpos) # 현재 joint 각도를 configuration에 반영해야 IK가 현재 로봇 자세를 기준으로 계산
 
-print(f"IK Starting joint angle (deg): {np.rad2deg(configuration.q[:6])}")
-
+# IK가 달성해야 할 목표를 정의
 task = mink.FrameTask(
     frame_name="robot_gripper_pinch",
     frame_type="site",
@@ -71,11 +70,9 @@ pre_grasp = mink.SE3.from_rotation_and_translation(
     rotation=downward_rotation,
     translation=box_pose.translation() + np.array([0.0, 0.0, 0.2])
 )
-
-# ✅ IK를 반복 실행해서 목표 joint angle 계산 (시뮬 시작 전에 한 번만)
 task.set_target(pre_grasp)
 
-for _ in range(1000):  # 충분히 반복해서 수렴
+for _ in range(1000):  
     vel = mink.solve_ik(configuration, [task], dt=0.01, solver="quadprog")
     configuration.integrate_inplace(vel, 0.01)
 
@@ -84,13 +81,9 @@ target_qpos = np.array([
     for name in joint_names
 ])
 
-print(f"Targeting joint angle (deg): {np.rad2deg(target_qpos)}")
-
 # -- Gripper Control
 gripper_act_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_ACTUATOR, "robot_gripper_fingers_actuator")
-# open == 0.0 & close == 255.0
-data.ctrl[gripper_act_id] = 0.0
-
+data.ctrl[gripper_act_id] = 0.0 # open == 0.0 & close == 255.0
 
 # ── interpolation setting
 MOVE_DURATION = 5.0   # 몇 초에 걸쳐 이동할지
@@ -108,6 +101,7 @@ with mujoco.viewer.launch_passive(model, data, key_callback=on_key) as viewer:
     while viewer.is_running():
         step_start = time.time()
 
+        # red box 위로 이동
         if current_phase == "pre_grasp" and interp_t < 1.0:
             interp_t = min(interp_t + model.opt.timestep / MOVE_DURATION, 1.0)
             t = interp_t * interp_t * (3 - 2 * interp_t)
@@ -117,21 +111,20 @@ with mujoco.viewer.launch_passive(model, data, key_callback=on_key) as viewer:
                 act_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_ACTUATOR, name)
                 data.ctrl[act_id] = current_ctrl[i]
         
+        # red box 위로 이동 후 다음 target pose 계산
         elif current_phase == "pre_grasp" and interp_t >= 1.0:
             current_phase = "grasp"
             interp_t = 0.0
             print("pre_grasp 완료 → grasp 시작")
 
-            # grasp target: box 위치로 내려가기
             grasp = mink.SE3.from_rotation_and_translation(
                 rotation=downward_rotation,
                 translation=box_pose.translation() + np.array([0.0, 0.0, 0.02])
             )
             task.set_target(grasp)
 
-            # IK로 grasp joint angle 계산
             grasp_configuration = mink.Configuration(model)
-            grasp_configuration.update(data.qpos)  # 현재 위치 기준으로 IK
+            grasp_configuration.update(data.qpos)
             for _ in range(1000):
                 vel = mink.solve_ik(grasp_configuration, [task], dt=0.01, solver="quadprog")
                 grasp_configuration.integrate_inplace(vel, 0.01)
@@ -140,50 +133,51 @@ with mujoco.viewer.launch_passive(model, data, key_callback=on_key) as viewer:
                 grasp_configuration.q[model.jnt_qposadr[mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, name)]]
                 for name in joint_names
             ])
-            print(f"grasp joint angle (deg): {np.rad2deg(grasp_qpos)}")
-
+        
+        # red box를 잡기 위해 높이 조절
         elif current_phase == "grasp" and interp_t < 1.0:
             interp_t = min(interp_t + model.opt.timestep / MOVE_DURATION, 1.0)
             t = interp_t * interp_t * (3 - 2 * interp_t)
-            current_ctrl = (1 - t) * target_qpos + t * grasp_qpos  # pre_grasp → grasp
+            current_ctrl = (1 - t) * target_qpos + t * grasp_qpos
 
             for i, name in enumerate(actuator_names):
                 act_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_ACTUATOR, name)
                 data.ctrl[act_id] = current_ctrl[i]
 
-        # ✅ 3단계: grasp 완료 → 그리퍼 닫기
+        # red box를 잡기 위해 높이 조절 후 gripper 닫을 준비
         elif current_phase == "grasp" and interp_t >= 1.0:
             current_phase = "grip"
-            interp_t = 0.0  # ✅ 기존 interp_t 리셋
+            interp_t = 0.0
             print("grasp 완료 → grip 시작 (그리퍼 천천히 닫기)")
 
+        # 그리퍼 제어
         elif current_phase == "grip" and interp_t < 1.0:
             interp_t = min(interp_t + model.opt.timestep / MOVE_DURATION, 1.0)
-            t = interp_t * interp_t * (3 - 2 * interp_t)  # smoothstep
+            t = interp_t * interp_t * (3 - 2 * interp_t)
             data.ctrl[gripper_act_id] = t * 255.0  # 0 → 255 천천히
 
+        # 그리퍼 제어 후 lift 준비
         elif current_phase == "grip" and interp_t >= 1.0:
             current_phase = "lift"
             interp_t = 0.0
             print("grip 완료 → lift 시작 (pre_grasp로 복귀)")
 
-        # 4단계: pre_grasp 위치로 복귀
+        # lift 제어
         elif current_phase == "lift" and interp_t < 1.0:
             interp_t = min(interp_t + model.opt.timestep / MOVE_DURATION, 1.0)
             t = interp_t * interp_t * (3 - 2 * interp_t)
-            current_ctrl = (1 - t) * grasp_qpos + t * target_qpos  # grasp → pre_grasp
+            current_ctrl = (1 - t) * grasp_qpos + t * target_qpos
 
             for i, name in enumerate(actuator_names):
                 act_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_ACTUATOR, name)
                 data.ctrl[act_id] = current_ctrl[i]
-
+        
+        # lift 제어 후 180도 회전 준비
         elif current_phase == "lift" and interp_t >= 1.0:
             current_phase = "rotate"
             interp_t = 0.0
             print("lift 완료 → rotate 시작 (180도 회전)")
 
-            # 180도 회전한 위치로 IK 계산
-            # shoulder_pan을 현재 기준 +180도 회전
             rotate_target = mink.SE3.from_rotation_and_translation(
                 rotation=downward_rotation,
                 translation=box_pose.translation() + np.array([0.0, 0.0, 0.2])
@@ -202,30 +196,28 @@ with mujoco.viewer.launch_passive(model, data, key_callback=on_key) as viewer:
             )
             rotate_task.set_target(rotate_target)
 
-            # ✅ 시작 qpos에서 shoulder_pan만 180도 돌린 값으로 설정
             rotate_init_qpos = target_qpos.copy()
             rotate_init_qpos[0] += np.pi  # shoulder_pan +180도
 
             rotate_qpos = rotate_init_qpos
             print(f"rotate joint angle (deg): {np.rad2deg(rotate_qpos)}")
 
-        # 5단계: 180도 회전
+        # 180도 회전
         elif current_phase == "rotate" and interp_t < 1.0:
             interp_t = min(interp_t + model.opt.timestep / MOVE_DURATION, 1.0)
             t = interp_t * interp_t * (3 - 2 * interp_t)
-            current_ctrl = (1 - t) * target_qpos + t * rotate_qpos  # pre_grasp → rotate
+            current_ctrl = (1 - t) * target_qpos + t * rotate_qpos
 
             for i, name in enumerate(actuator_names):
                 act_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_ACTUATOR, name)
                 data.ctrl[act_id] = current_ctrl[i]
 
+        # 180도 회전 후 내릴 준비
         elif current_phase == "rotate" and interp_t >= 1.0:
             current_phase = "place"
             interp_t = 0.0
             print("rotate 완료 → place 시작 (박스 내려놓기)")
 
-            # 다른 테이블 위치로 내려가는 IK 계산
-            # rotate_qpos 기준 현재 위치에서 z만 낮추기
             configuration.update(data.qpos)
             current_ee = configuration.get_transform_frame_to_world("robot_gripper_pinch", "site")
             place_target = mink.SE3.from_rotation_and_translation(
@@ -253,7 +245,7 @@ with mujoco.viewer.launch_passive(model, data, key_callback=on_key) as viewer:
             ])
             print(f"place joint angle (deg): {np.rad2deg(place_qpos)}")
 
-        # 6단계: 박스 내려놓기
+        # 박스 내려놓기
         elif current_phase == "place" and interp_t < 1.0:
             interp_t = min(interp_t + model.opt.timestep / MOVE_DURATION, 1.0)
             t = interp_t * interp_t * (3 - 2 * interp_t)
@@ -263,23 +255,25 @@ with mujoco.viewer.launch_passive(model, data, key_callback=on_key) as viewer:
                 act_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_ACTUATOR, name)
                 data.ctrl[act_id] = current_ctrl[i]
 
-        # 7단계: 그리퍼 열기
+        # 박스 내려놓기 후 그리퍼 열 준비
         elif current_phase == "place" and interp_t >= 1.0:
             current_phase = "release"
             interp_t = 0.0
             print("place 완료 → release 시작 (그리퍼 열기)")
 
+        # 그리퍼 열기
         elif current_phase == "release" and interp_t < 1.0:
             interp_t = min(interp_t + model.opt.timestep / MOVE_DURATION, 1.0)
             t = interp_t * interp_t * (3 - 2 * interp_t)
             data.ctrl[gripper_act_id] = (1 - t) * 255.0  # 255 → 0 천천히
 
-        # 8단계: init pose로 복귀
+        # 그리퍼 연 후 init pose로 갈 준비
         elif current_phase == "release" and interp_t >= 1.0:
             current_phase = "init_return"
             interp_t = 0.0
             print("release 완료 → init pose로 복귀")
 
+        # init pose로 이동
         elif current_phase == "init_return" and interp_t < 1.0:
             interp_t = min(interp_t + model.opt.timestep / MOVE_DURATION, 1.0)
             t = interp_t * interp_t * (3 - 2 * interp_t)
