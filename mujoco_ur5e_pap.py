@@ -162,7 +162,7 @@ with mujoco.viewer.launch_passive(model, data, key_callback=on_key) as viewer:
             interp_t = 0.0
             print("grip 완료 → lift 시작 (pre_grasp로 복귀)")
 
-        # lift 제어
+        # lift
         elif current_phase == "lift" and interp_t < 1.0:
             interp_t = min(interp_t + model.opt.timestep / MOVE_DURATION, 1.0)
             t = interp_t * interp_t * (3 - 2 * interp_t)
